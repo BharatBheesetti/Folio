@@ -1,0 +1,79 @@
+{
+  "name": "folio",
+  "version": "1.0.0",
+  "description": "Minimal, beautiful markdown reader for Windows",
+  "main": "main.js",
+  "author": "Bharat Bheesetti",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BharatBheesetti/Folio.git"
+  },
+  "homepage": "https://github.com/BharatBheesetti/Folio",
+  "bugs": {
+    "url": "https://github.com/BharatBheesetti/Folio/issues"
+  },
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win portable",
+    "build:installer": "electron-builder --win nsis",
+    "create-icon": "node scripts/create-icon.js"
+  },
+  "dependencies": {
+    "highlight.js": "^11.0.0",
+    "marked": "^12.0.0",
+    "marked-highlight": "^2.0.0",
+    "sanitize-html": "^2.17.1"
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.0.0",
+    "pngjs": "^7.0.0"
+  },
+  "build": {
+    "icon": "build/icon.png",
+    "appId": "com.folio.app",
+    "productName": "Folio",
+    "win": {
+      "target": [
+        "portable",
+        "nsis"
+      ],
+      "fileAssociations": [
+        {
+          "ext": "md",
+          "name": "Markdown File",
+          "role": "Viewer"
+        },
+        {
+          "ext": "markdown",
+          "name": "Markdown File",
+          "role": "Viewer"
+        },
+        {
+          "ext": "mdown",
+          "name": "Markdown File",
+          "role": "Viewer"
+        },
+        {
+          "ext": "mkd",
+          "name": "Markdown File",
+          "role": "Viewer"
+        },
+        {
+          "ext": "mdx",
+          "name": "Markdown File",
+          "role": "Viewer"
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerSidebar": null,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Folio"
+    }
+  }
+}
