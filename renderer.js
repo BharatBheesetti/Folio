@@ -4,6 +4,19 @@
     const newTabBtn = document.getElementById('new-tab-btn');
     const themeBtn = document.getElementById('theme-btn');
 
+    /* ---- Throttle utility ---- */
+    function throttle(fn, ms) {
+      let last = 0, timer = null;
+      return function (...args) {
+        const now = Date.now();
+        if (now - last >= ms) { last = now; fn.apply(this, args); }
+        else if (!timer) { timer = setTimeout(() => { last = Date.now(); timer = null; fn.apply(this, args); }, ms - (now - last)); }
+      };
+    }
+
+    /* ---- HTML Cache ---- */
+    const htmlCache = new Map();
+
     const MOON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
     const SUN = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`;
 
@@ -179,7 +192,7 @@
       const idx = S.tabs.findIndex(t => t.id === id);
       if (idx < 0) return;
       const tab = S.tabs[idx];
-      if (tab.path) { S.closed.push(tab.path); if (S.closed.length > 20) S.closed.shift(); api.unwatchFile(tab.path); }
+      if (tab.path) { S.closed.push(tab.path); if (S.closed.length > 20) S.closed.shift(); api.unwatchFile(tab.path); htmlCache.delete(tab.path); }
       const tabEl = tabsScroll.querySelectorAll('.tab')[idx];
       if (tabEl) tabEl.classList.add('tab-closing');
       const finish = () => {
@@ -218,6 +231,25 @@
     async function loadInTab(tabId, filePath) {
       const tab = S.tabs.find(t => t.id === tabId);
       if (!tab) return;
+
+      // Check HTML cache first
+      const cached = htmlCache.get(filePath);
+      if (cached) {
+        tab.path = filePath;
+        tab.name = cached.name;
+        tab.html = cached.html;
+        tab.wordCount = cached.wordCount;
+        tab.readingTime = cached.readingTime;
+        addRecentFile(filePath);
+        if (S.activeId === tabId) {
+          showContent(tab.html, tab.scrollY || 0, true);
+          document.title = tab.name + ' \u2014 Folio';
+        }
+        renderTabs();
+        saveSession();
+        return;
+      }
+
       if (S.activeId === tabId) {
         showContent('<div class="loading-dots">Opening</div>', 0);
       }
@@ -234,6 +266,8 @@
         tabAfter.html = r.html;
         tabAfter.wordCount = r.wordCount;
         tabAfter.readingTime = r.readingTime;
+        // Store in cache
+        htmlCache.set(r.path, { html: r.html, name: r.name, wordCount: r.wordCount, readingTime: r.readingTime });
         addRecentFile(r.path);
       }
       if (S.activeId === tabId) {
@@ -335,10 +369,11 @@
     });
 
     /* ---- Scroll Shadow & Progress ---- */
+    const throttledOutlineHighlight = throttle(updateOutlineHighlight, 100);
     window.addEventListener('scroll', () => {
       document.getElementById('tab-bar').classList.toggle('scrolled', window.scrollY > 8);
       updateProgressBar();
-      updateOutlineHighlight();
+      throttledOutlineHighlight();
       const cur = S.tabs.find(t => t.id === S.activeId);
       if (cur) { cur.scrollY = window.scrollY; saveSessionDebounced(); }
     }, { passive: true });
@@ -360,8 +395,10 @@
     /* ---- IPC Events ---- */
     api.onOpenFile(p => openFile(p));
     api.onFileChanged(async filePath => {
+      htmlCache.delete(filePath);
       const r = await api.readAndRender(filePath);
       if (r.error) return;
+      htmlCache.set(filePath, { html: r.html, name: r.name, wordCount: r.wordCount, readingTime: r.readingTime });
       S.tabs.forEach(tab => {
         if (tab.path === filePath) {
           tab.html = r.html;

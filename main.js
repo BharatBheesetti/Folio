@@ -50,6 +50,9 @@ marked.use(
 
 marked.use({ gfm: true, breaks: false });
 
+const isMac = process.platform === 'darwin';
+const isLinux = process.platform === 'linux';
+
 let mainWindow;
 let fileToOpen = null;
 const fileWatchers = new Map(); // path -> { watcher }
@@ -88,7 +91,7 @@ if (!gotLock) {
   });
 
   function createWindow() {
-    mainWindow = new BrowserWindow({
+    const windowOptions = {
       width: 900,
       height: 720,
       minWidth: 480,
@@ -96,12 +99,6 @@ if (!gotLock) {
       center: true,
       icon: path.join(__dirname, 'build', 'icon.png'),
       autoHideMenuBar: true,
-      titleBarStyle: 'hidden',
-      titleBarOverlay: {
-        color: '#EEEBE6',
-        symbolColor: '#78716C',
-        height: 48,
-      },
       backgroundColor: '#FAF8F5',
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
@@ -109,12 +106,34 @@ if (!gotLock) {
         nodeIntegration: false,
       },
       show: false,
-    });
+    };
+
+    if (isMac) {
+      windowOptions.titleBarStyle = 'hiddenInset';
+      windowOptions.trafficLightPosition = { x: 16, y: 16 };
+    } else if (isLinux) {
+      // Linux: use default system title bar for best compatibility
+    } else {
+      // Windows: custom title bar overlay
+      windowOptions.titleBarStyle = 'hidden';
+      windowOptions.titleBarOverlay = {
+        color: '#EEEBE6',
+        symbolColor: '#78716C',
+        height: 48,
+      };
+    }
+
+    mainWindow = new BrowserWindow(windowOptions);
 
     mainWindow.loadFile('index.html');
 
     session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
       callback({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': ["default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' file: data:; connect-src 'none'; frame-src 'none';"] } });
+    });
+
+    // Deny all permission requests — Folio needs zero browser permissions
+    session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+      callback(false);
     });
 
     mainWindow.once('ready-to-show', () => {
@@ -194,7 +213,7 @@ if (!gotLock) {
     try {
       const ext = path.extname(filePath).toLowerCase();
       if (!SUPPORTED_EXTENSIONS.includes(ext)) return { error: 'File type not supported' };
-      const content = fs.readFileSync(filePath, 'utf-8');
+      const content = await fs.promises.readFile(filePath, 'utf-8');
       const dir = path.dirname(filePath);
       const name = path.basename(filePath);
 

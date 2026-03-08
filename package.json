@@ -1,7 +1,7 @@
 {
   "name": "folio",
   "version": "1.0.0",
-  "description": "Minimal, beautiful markdown reader for Windows",
+  "description": "Minimal, beautiful markdown reader",
   "main": "main.js",
   "author": "Bharat Bheesetti",
   "license": "MIT",
@@ -17,6 +17,9 @@
     "start": "electron .",
     "build": "electron-builder --win portable",
     "build:installer": "electron-builder --win nsis",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux",
     "create-icon": "node scripts/create-icon.js"
   },
   "dependencies": {
@@ -31,13 +34,20 @@
     "pngjs": "^7.0.0"
   },
   "build": {
-    "icon": "build/icon.png",
     "appId": "com.folio.app",
     "productName": "Folio",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "files": [
+      "**/*",
+      "!scripts",
+      "!.github",
+      "!.plans"
+    ],
     "win": {
+      "icon": "build/icon.png",
       "target": [
-        "portable",
-        "nsis"
+        "nsis",
+        "portable"
       ],
       "fileAssociations": [
         {
@@ -74,6 +84,89 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Folio"
+    },
+    "mac": {
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "fileAssociations": [
+        {
+          "ext": "md",
+          "name": "Markdown File",
+          "role": "Viewer"
+        },
+        {
+          "ext": "markdown",
+          "name": "Markdown File",
+          "role": "Viewer"
+        },
+        {
+          "ext": "mdown",
+          "name": "Markdown File",
+          "role": "Viewer"
+        },
+        {
+          "ext": "mkd",
+          "name": "Markdown File",
+          "role": "Viewer"
+        },
+        {
+          "ext": "mdx",
+          "name": "Markdown File",
+          "role": "Viewer"
+        }
+      ]
+    },
+    "dmg": {
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Office",
+      "mimeTypes": [
+        "text/markdown",
+        "text/x-markdown"
+      ],
+      "fileAssociations": [
+        {
+          "ext": "md",
+          "name": "Markdown File",
+          "role": "Viewer"
+        },
+        {
+          "ext": "markdown",
+          "name": "Markdown File",
+          "role": "Viewer"
+        },
+        {
+          "ext": "mdown",
+          "name": "Markdown File",
+          "role": "Viewer"
+        },
+        {
+          "ext": "mkd",
+          "name": "Markdown File",
+          "role": "Viewer"
+        },
+        {
+          "ext": "mdx",
+          "name": "Markdown File",
+          "role": "Viewer"
+        }
+      ]
     }
   }
 }
