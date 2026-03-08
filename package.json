@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "description": "Minimal, beautiful markdown reader",
   "main": "main.js",
-  "author": "Bharat Bheesetti",
+  "author": {
+    "name": "Bharat Bheesetti",
+    "email": "bharat@bheesetti.com"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
