@@ -497,7 +497,8 @@
     async function loadFolderTree(folderPath) {
       const tree = await api.scanFolder(folderPath);
       if (tree.error) {
-        fileTree.innerHTML = `<div class="sidebar-empty"><p>${tree.error}</p></div>`;
+        const escaped = tree.error.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        fileTree.innerHTML = `<div class="sidebar-empty"><p>${escaped}</p></div>`;
         return;
       }
       if (!tree.length) {
@@ -640,7 +641,7 @@
       if (status.status === 'activated') {
         licenseStatusText.textContent = 'License activated. Thank you!';
         licenseStatusText.style.color = 'var(--accent)';
-        licenseKeyInput.value = status.key?.slice(0, 8) + '...' || '';
+        licenseKeyInput.value = status.key ? status.key.slice(0, 8) + '...' : '';
         licenseKeyInput.disabled = true;
         document.getElementById('activate-btn').style.display = 'none';
         deactivateBtn.style.display = '';

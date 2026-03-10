@@ -283,12 +283,6 @@ if (!gotLock) {
       if (data.error) return { success: false, error: data.error };
       return { success: false, error: 'Invalid license key' };
     } catch {
-      // Offline: accept keys that match a basic format (fallback)
-      // In production, you'd use cryptographic offline validation
-      if (trimmed.length >= 16) {
-        writeLicense({ activated: true, key: trimmed, activatedAt: Date.now(), offline: true });
-        return { success: true };
-      }
       return { success: false, error: 'Cannot validate license key. Check your internet connection.' };
     }
   });
