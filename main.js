@@ -92,8 +92,9 @@ if (isMac) {
   });
 }
 
-// Single instance lock
-const gotLock = app.requestSingleInstanceLock();
+// Single instance lock (skip in test mode)
+const isTest = process.env.FOLIO_TEST === '1';
+const gotLock = isTest ? true : app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
@@ -135,7 +136,7 @@ if (!gotLock) {
         contextIsolation: true,
         nodeIntegration: false,
       },
-      show: false,
+      show: process.env.FOLIO_TEST ? true : false,
     };
 
     if (isMac) {
@@ -157,9 +158,12 @@ if (!gotLock) {
 
     mainWindow.loadFile('index.html');
 
-    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-      callback({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': ["default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' file: data:; connect-src 'none'; frame-src 'none';"] } });
-    });
+    // Skip CSP in test mode (Playwright needs to inject scripts)
+    if (!isTest) {
+      session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+        callback({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': ["default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' file: data:; connect-src 'none'; frame-src 'none';"] } });
+      });
+    }
 
     // Deny all permission requests — Folio needs zero browser permissions
     session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
@@ -363,10 +367,14 @@ if (!gotLock) {
 
   ipcMain.on('set-titlebar-theme', (event, isDark) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.setTitleBarOverlay({
-        color: isDark ? '#141210' : '#EEEBE6',
-        symbolColor: isDark ? '#A8A29E' : '#78716C',
-      });
+      try {
+        mainWindow.setTitleBarOverlay({
+          color: isDark ? '#141210' : '#EEEBE6',
+          symbolColor: isDark ? '#A8A29E' : '#78716C',
+        });
+      } catch (_) {
+        // Titlebar overlay not available on Linux
+      }
     }
   });
 

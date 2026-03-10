@@ -3,3 +3,5 @@ dist/
 .plans/
 *.log
 *.exe
+tests/screenshots/
+test-results/

@@ -23,7 +23,9 @@
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
     "build:linux": "electron-builder --linux",
-    "create-icon": "node scripts/create-icon.js"
+    "create-icon": "node scripts/create-icon.js",
+    "test": "npx playwright test",
+    "test:screenshots": "npx playwright test --reporter=list"
   },
   "dependencies": {
     "electron-updater": "^6.0.0",
@@ -33,6 +35,7 @@
     "sanitize-html": "^2.17.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "electron": "^30.0.0",
     "electron-builder": "^24.0.0",
     "pngjs": "^7.0.0"
@@ -101,7 +104,10 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ],
       "category": "public.app-category.productivity",
@@ -136,8 +142,16 @@
     },
     "dmg": {
       "contents": [
-        { "x": 130, "y": 220 },
-        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
       ]
     },
     "linux": {
