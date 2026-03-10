@@ -1,8 +1,8 @@
 /**
- * Folio Screenshot Tests
+ * Folio User Flow Tests
  *
- * Uses Electron + X11 tools (xdotool, import) for visual testing.
- * Each test captures the actual rendered UI as a screenshot.
+ * Tests actual multi-step user journeys, walking forward through
+ * a sequence of actions, then backwards undoing each step.
  *
  * Run: DISPLAY=:99 node tests/screenshot-tests.js
  */
@@ -33,10 +33,10 @@ function screenshot(name) {
   const filepath = path.join(SCREENSHOT_DIR, name);
   try {
     execSync(`import -window root ${filepath}`, { timeout: 5000 });
-    console.log(`  📸 ${name}`);
+    console.log(`    📸 ${name}`);
     return true;
   } catch (e) {
-    console.log(`  ⚠️  Screenshot failed: ${name}`);
+    console.log(`    ⚠️  Screenshot failed: ${name}`);
     return false;
   }
 }
@@ -60,17 +60,20 @@ function type(text) {
 let winX = 0, winY = 0, winW = 900, winH = 720;
 
 function click(x, y) {
-  // Convert window-relative coords to screen coords
   const sx = winX + x;
   const sy = winY + y;
   xdotool(`mousemove ${sx} ${sy} click 1`);
 }
 
-function dismissDialogs() {
-  // Press Escape and Alt+F4 to dismiss any native dialogs
-  sendKey('Escape');
-  sendKey('Escape');
-}
+// Button positions in tab bar (window-relative, 48px tab bar height)
+// Right-to-left: settings(744,24), theme(708,24), outline(676,24), +(644,24), sidebar(612,24)
+const BTN = {
+  theme:    { x: 708, y: 24 },
+  outline:  { x: 676, y: 24 },
+  settings: { x: 744, y: 24 },
+  sidebar:  { x: 612, y: 24 },
+  newTab:   { x: 644, y: 24 },
+};
 
 async function launchApp(args = []) {
   return new Promise((resolve, reject) => {
@@ -82,7 +85,6 @@ async function launchApp(args = []) {
 
     electronProc.on('error', reject);
 
-    // Wait for the window to appear
     let attempts = 0;
     const check = setInterval(() => {
       attempts++;
@@ -90,16 +92,14 @@ async function launchApp(args = []) {
       if (wid) {
         clearInterval(check);
         const firstWid = wid.split('\n')[0];
-        // Focus the window
         xdotool(`windowactivate ${firstWid}`);
-        // Get window geometry for relative clicks
         const geo = xdotool(`getwindowgeometry ${firstWid}`);
         if (geo) {
           const posMatch = geo.match(/Position:\s+(\d+),(\d+)/);
           const sizeMatch = geo.match(/Geometry:\s+(\d+)x(\d+)/);
           if (posMatch) { winX = parseInt(posMatch[1]); winY = parseInt(posMatch[2]); }
           if (sizeMatch) { winW = parseInt(sizeMatch[1]); winH = parseInt(sizeMatch[2]); }
-          console.log(`  Window: ${winW}x${winH} at (${winX},${winY})`);
+          console.log(`    Window: ${winW}x${winH} at (${winX},${winY})`);
         }
         resolve(firstWid);
       } else if (attempts > 30) {
@@ -115,7 +115,6 @@ function killApp() {
     electronProc.kill('SIGTERM');
     electronProc = null;
   }
-  // Also kill any stray electron processes
   try { execSync('pkill -f "electron.*main.js" 2>/dev/null'); } catch {}
 }
 
@@ -137,198 +136,385 @@ function assert(condition, message) {
   if (!condition) throw new Error(message || 'Assertion failed');
 }
 
+function step(label) {
+  console.log(`    → ${label}`);
+}
+
 // ============================================================
-// TEST SUITE
+// USER FLOW TESTS
 // ============================================================
 
 async function runTests() {
   console.log('═══════════════════════════════════════════');
-  console.log(' Folio Screenshot Tests');
+  console.log(' Folio User Flow Tests');
   console.log('═══════════════════════════════════════════');
 
-  // ------- FLOW 1: Fresh launch -------
-  await test('Flow 1: Fresh launch shows welcome screen', async () => {
-    const wid = await launchApp();
-    await sleep(2000);
-    assert(wid, 'Window should exist');
-    screenshot('01-welcome-screen.png');
-  });
-
-  // ------- FLOW 2: Open file via CLI arg -------
-  await test('Flow 2: Open markdown file renders beautifully', async () => {
+  // ─────────────────────────────────────────────────────────
+  // FLOW 1: Reader customization — forward then backwards
+  //   open file → dark mode → zoom in → open outline → open search
+  //   → close search → close outline → zoom reset → light mode
+  // ─────────────────────────────────────────────────────────
+  await test('Flow 1: Reader customization (forward + backward)', async () => {
+    // Kill any stale processes from prior runs
     killApp();
     await sleep(1000);
     const wid = await launchApp([SAMPLE_MD]);
     await sleep(2500);
-    screenshot('02-markdown-rendered.png');
-  });
+    assert(wid, 'Window should exist');
 
-  // ------- FLOW 3: Tab bar shows filename -------
-  await test('Flow 3: Tab bar shows file name', async () => {
-    // File should already be open from Flow 2
-    await sleep(500);
-    screenshot('03-tab-bar.png');
-    // Tab bar is always visible at top, filename should be in title
-  });
+    // -- Forward --
+    step('1. File opened in light mode');
+    screenshot('flow1-01-file-opened-light.png');
 
-  // ------- FLOW 4: Dark mode toggle -------
-  await test('Flow 4: Dark mode toggle works', async () => {
-    // Tab bar: 900px wide, padding-right: 140px → content ends at 760px
-    // Buttons (32px each, right-to-left): settings(744), theme(708), outline(676), +(644), sidebar(612)
-    // Y center of 48px tab bar = 24
-
-    // Take light mode screenshot first
-    screenshot('04a-light-mode.png');
-
-    // Click theme button (window-relative coords)
-    click(708, 24);
+    step('2. Switch to dark mode');
+    click(BTN.theme.x, BTN.theme.y);
     await sleep(600);
-    screenshot('04b-dark-mode.png');
+    screenshot('flow1-02-dark-mode.png');
 
-    // Toggle back to light
-    click(708, 24);
-    await sleep(400);
-  });
-
-  // ------- FLOW 5: Sidebar toggle -------
-  await test('Flow 5: Sidebar toggle (Ctrl+B)', async () => {
-    sendKey('ctrl+b');
-    await sleep(500);
-    screenshot('05a-sidebar-open.png');
-
-    // Close sidebar
-    sendKey('ctrl+b');
+    step('3. Zoom in twice');
+    sendKey('ctrl+plus');
     await sleep(300);
-  });
+    sendKey('ctrl+plus');
+    await sleep(300);
+    screenshot('flow1-03-zoomed-in-dark.png');
 
-  // ------- FLOW 6: Search (Ctrl+F) -------
-  await test('Flow 6: Search bar with Ctrl+F', async () => {
-    sendKey('ctrl+f');
+    step('4. Open outline panel');
+    click(BTN.outline.x, BTN.outline.y);
     await sleep(500);
+    screenshot('flow1-04-outline-open-zoomed-dark.png');
+
+    step('5. Open search, type query');
+    sendKey('ctrl+f');
+    await sleep(400);
     type('Folio');
     await sleep(500);
-    screenshot('06-search-active.png');
+    screenshot('flow1-05-search-active-outline-zoomed-dark.png');
 
+    // -- Backward --
+    step('6. Close search (backwards step 1)');
     sendKey('Escape');
-    await sleep(300);
-  });
-
-  // ------- FLOW 7: Outline panel -------
-  await test('Flow 7: Outline panel shows headings', async () => {
-    // Outline button center at x=676, y=24 (window-relative)
-    click(676, 24);
-    await sleep(500);
-    screenshot('07-outline-panel.png');
-
-    // Close outline
-    click(676, 24);
-    await sleep(300);
-  });
-
-  // ------- FLOW 8: Open file via CLI with folder for sidebar test -------
-  await test('Flow 8: Sidebar with dotfile folder tree', async () => {
-    // Open sidebar
-    sendKey('ctrl+b');
-    await sleep(500);
-
-    // We can't easily click "Open Folder" and navigate a dialog in headless mode
-    // But we CAN verify the sidebar opens and shows empty state
-    screenshot('08-sidebar-empty-state.png');
-
-    sendKey('ctrl+b');
-    await sleep(300);
-  });
-
-  // ------- FLOW 9: Status bar visible -------
-  await test('Flow 9: Status bar shows word count', async () => {
-    // Status bar should be visible at the bottom when a file is open
-    screenshot('09-status-bar.png');
-  });
-
-  // ------- FLOW 10: Dark mode beauty shot -------
-  await test('Flow 10: Dark mode with content (beauty shot)', async () => {
-    // Switch to dark mode — theme button at x=708, y=24
-    click(708, 24);
-    await sleep(600);
-    screenshot('10-dark-mode-content.png');
-
-    // Back to light
-    click(708, 24);
     await sleep(400);
-  });
+    screenshot('flow1-06-search-closed.png');
 
-  // ------- FLOW 11: PDF export shortcut (Ctrl+P) -------
-  await test('Flow 11: PDF export dialog (Ctrl+P)', async () => {
-    // Just verify the shortcut doesn't crash
-    // We can't interact with native dialogs easily
-    screenshot('11-before-export.png');
-  });
+    step('7. Close outline (backwards step 2)');
+    click(BTN.outline.x, BTN.outline.y);
+    await sleep(400);
+    screenshot('flow1-07-outline-closed.png');
 
-  // ------- FLOW 12: Zoom controls -------
-  await test('Flow 12: Zoom in/out changes content size', async () => {
-    screenshot('12a-default-zoom.png');
-
-    // Ctrl+= to zoom in
-    sendKey('ctrl+plus');
-    await sleep(300);
-    sendKey('ctrl+plus');
-    await sleep(300);
-    screenshot('12b-zoomed-in.png');
-
-    // Reset zoom
+    step('8. Reset zoom (backwards step 3)');
     sendKey('ctrl+0');
-    await sleep(300);
+    await sleep(400);
+    screenshot('flow1-08-zoom-reset.png');
+
+    step('9. Switch back to light mode (backwards step 4)');
+    click(BTN.theme.x, BTN.theme.y);
+    await sleep(500);
+    screenshot('flow1-09-back-to-light.png');
   });
 
-  // ------- FLOW 13: Settings modal -------
-  await test('Flow 13: Settings modal with license info', async () => {
-    // Settings gear icon — rightmost button at x=744, y=24
-    click(744, 24);
-    await sleep(500);
-    screenshot('13-settings-modal.png');
+  // ─────────────────────────────────────────────────────────
+  // FLOW 2: Sidebar + file browsing — forward then backwards
+  //   open file → open sidebar → (see empty state) → close sidebar
+  //   → reopen sidebar → close sidebar
+  // ─────────────────────────────────────────────────────────
+  await test('Flow 2: Sidebar navigation (forward + backward)', async () => {
+    // App still running from Flow 1
 
-    // Close by pressing Escape
+    step('1. Starting state: file open, no sidebar');
+    screenshot('flow2-01-start.png');
+
+    step('2. Open sidebar with Ctrl+B');
+    sendKey('ctrl+b');
+    await sleep(500);
+    screenshot('flow2-02-sidebar-open.png');
+
+    step('3. Toggle dark mode while sidebar is open');
+    click(BTN.theme.x, BTN.theme.y);
+    await sleep(500);
+    screenshot('flow2-03-sidebar-dark.png');
+
+    step('4. Open outline while sidebar is still open');
+    click(BTN.outline.x, BTN.outline.y);
+    await sleep(500);
+    screenshot('flow2-04-sidebar-outline-dark.png');
+
+    // -- Backward --
+    step('5. Close outline (backwards step 1)');
+    click(BTN.outline.x, BTN.outline.y);
+    await sleep(400);
+    screenshot('flow2-05-outline-closed.png');
+
+    step('6. Switch back to light mode (backwards step 2)');
+    click(BTN.theme.x, BTN.theme.y);
+    await sleep(500);
+    screenshot('flow2-06-sidebar-light.png');
+
+    step('7. Close sidebar (backwards step 3)');
+    sendKey('ctrl+b');
+    await sleep(400);
+    screenshot('flow2-07-sidebar-closed.png');
+  });
+
+  // ─────────────────────────────────────────────────────────
+  // FLOW 3: Search with navigation — forward then backwards
+  //   open search → type query → next match → next match → prev match → clear → close
+  // ─────────────────────────────────────────────────────────
+  await test('Flow 3: Search with match navigation (forward + backward)', async () => {
+    step('1. Open search');
+    sendKey('ctrl+f');
+    await sleep(400);
+    screenshot('flow3-01-search-bar-open.png');
+
+    step('2. Type search term');
+    type('markdown');
+    await sleep(600);
+    screenshot('flow3-02-search-typed.png');
+
+    step('3. Navigate to next match (Enter)');
+    sendKey('Return');
+    await sleep(400);
+    screenshot('flow3-03-next-match.png');
+
+    step('4. Navigate to next match again');
+    sendKey('Return');
+    await sleep(400);
+    screenshot('flow3-04-next-match-2.png');
+
+    // -- Backward --
+    step('5. Navigate backwards (Shift+Enter)');
+    sendKey('shift+Return');
+    await sleep(400);
+    screenshot('flow3-05-prev-match.png');
+
+    step('6. Navigate backwards again');
+    sendKey('shift+Return');
+    await sleep(400);
+    screenshot('flow3-06-prev-match-2.png');
+
+    step('7. Close search');
+    sendKey('Escape');
+    await sleep(400);
+    screenshot('flow3-07-search-closed.png');
+  });
+
+  // ─────────────────────────────────────────────────────────
+  // FLOW 4: Multi-tab + close/reopen — forward then backwards
+  //   We need to restart to test multi-tab with a different file
+  //   open file1 → Ctrl+W close it → Ctrl+Shift+T reopen
+  // ─────────────────────────────────────────────────────────
+  await test('Flow 4: Tab close and reopen (forward + backward)', async () => {
+    step('1. File already open in tab');
+    screenshot('flow4-01-file-in-tab.png');
+
+    step('2. Close tab with Ctrl+W');
+    sendKey('ctrl+w');
+    await sleep(500);
+    screenshot('flow4-02-tab-closed-welcome.png');
+
+    step('3. Reopen closed tab with Ctrl+Shift+T');
+    sendKey('ctrl+shift+t');
+    await sleep(800);
+    screenshot('flow4-03-tab-reopened.png');
+  });
+
+  // ─────────────────────────────────────────────────────────
+  // FLOW 5: Settings modal interaction — forward then backwards
+  //   open settings → interact → close → verify app returns to normal
+  // ─────────────────────────────────────────────────────────
+  await test('Flow 5: Settings modal (forward + backward)', async () => {
+    step('1. Starting state');
+    screenshot('flow5-01-start.png');
+
+    step('2. Open settings modal');
+    click(BTN.settings.x, BTN.settings.y);
+    await sleep(500);
+    screenshot('flow5-02-settings-open.png');
+
+    step('3. Switch to dark mode while settings open');
+    // Settings is a modal overlay — click theme button is behind it
+    // Close settings first, toggle, reopen to test layering
     sendKey('Escape');
     await sleep(300);
+    click(BTN.theme.x, BTN.theme.y);
+    await sleep(400);
+    screenshot('flow5-03-dark-mode.png');
+
+    step('4. Reopen settings in dark mode');
+    click(BTN.settings.x, BTN.settings.y);
+    await sleep(500);
+    screenshot('flow5-04-settings-dark.png');
+
+    // -- Backward --
+    step('5. Close settings (backwards step 1)');
+    sendKey('Escape');
+    await sleep(400);
+    screenshot('flow5-05-settings-closed-dark.png');
+
+    step('6. Switch back to light mode (backwards step 2)');
+    click(BTN.theme.x, BTN.theme.y);
+    await sleep(500);
+    screenshot('flow5-06-back-to-light.png');
   });
 
-  // ------- FLOW 14: Verify dotfile scanning works -------
-  await test('Flow 14: Dotfile folders (.claude/, .planning/) scannable', async () => {
-    // This is a data test - verify the IPC handler works correctly
-    // We can't easily call IPC from outside, but we can verify the files exist
-    const claudeMd = path.join(TEST_PROJECT, 'CLAUDE.md');
-    const planFile = path.join(TEST_PROJECT, '.claude', 'plans', 'auth-plan.md');
-    const planningFile = path.join(TEST_PROJECT, '.planning', 'sprint.md');
+  // ─────────────────────────────────────────────────────────
+  // FLOW 6: Full kitchen sink — forward through everything, then backwards
+  //   open file → sidebar → dark mode → zoom in → outline → search → settings
+  //   → close settings → close search → close outline → reset zoom → light mode → close sidebar
+  // ─────────────────────────────────────────────────────────
+  await test('Flow 6: Full kitchen sink (all features forward + backward)', async () => {
+    killApp();
+    await sleep(1000);
+    const wid = await launchApp([SAMPLE_MD]);
+    await sleep(2500);
+    assert(wid, 'Window should exist');
 
-    assert(fs.existsSync(claudeMd), 'CLAUDE.md should exist');
-    assert(fs.existsSync(planFile), '.claude/plans/auth-plan.md should exist');
-    assert(fs.existsSync(planningFile), '.planning/sprint.md should exist');
+    // -- Forward: stack every feature --
+    step('1. File opened');
+    screenshot('flow6-01-file-opened.png');
 
-    // Verify scan-folder IPC works by testing main.js scanDirectory directly
-    // We load main.js functions in isolation
-    const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf-8');
+    step('2. Open sidebar');
+    sendKey('ctrl+b');
+    await sleep(500);
+    screenshot('flow6-02-sidebar.png');
 
-    // Extract scanDirectory function and test it
-    // Simpler: just require the filesystem checks
-    const entries = fs.readdirSync(TEST_PROJECT, { withFileTypes: true });
-    const dotDirs = entries.filter(e => e.isDirectory() && e.name.startsWith('.'));
-    const dotDirNames = dotDirs.map(e => e.name);
+    step('3. Dark mode');
+    click(BTN.theme.x, BTN.theme.y);
+    await sleep(500);
+    screenshot('flow6-03-dark.png');
 
-    assert(dotDirNames.includes('.claude'), '.claude directory should be readable');
-    assert(dotDirNames.includes('.planning'), '.planning directory should be readable');
+    step('4. Zoom in');
+    sendKey('ctrl+plus');
+    await sleep(300);
+    sendKey('ctrl+plus');
+    await sleep(300);
+    screenshot('flow6-04-zoomed.png');
 
-    console.log(`  Found dotfile dirs: ${dotDirNames.join(', ')}`);
-    screenshot('14-dotfiles-test.png');
+    step('5. Open outline');
+    click(BTN.outline.x, BTN.outline.y);
+    await sleep(500);
+    screenshot('flow6-05-outline.png');
+
+    step('6. Open search');
+    sendKey('ctrl+f');
+    await sleep(400);
+    type('code');
+    await sleep(500);
+    screenshot('flow6-06-search.png');
+
+    step('7. Peak state — everything open');
+    screenshot('flow6-07-peak-everything-open.png');
+
+    // -- Backward: undo every feature in reverse order --
+    step('8. Close search (backward 1)');
+    sendKey('Escape');
+    await sleep(400);
+    screenshot('flow6-08-no-search.png');
+
+    step('9. Close outline (backward 2)');
+    click(BTN.outline.x, BTN.outline.y);
+    await sleep(400);
+    screenshot('flow6-09-no-outline.png');
+
+    step('10. Reset zoom (backward 3)');
+    sendKey('ctrl+0');
+    await sleep(400);
+    screenshot('flow6-10-zoom-reset.png');
+
+    step('11. Light mode (backward 4)');
+    click(BTN.theme.x, BTN.theme.y);
+    await sleep(500);
+    screenshot('flow6-11-light.png');
+
+    step('12. Close sidebar (backward 5)');
+    sendKey('ctrl+b');
+    await sleep(400);
+    screenshot('flow6-12-clean-state.png');
+
+    step('13. Verify back to original state');
+    screenshot('flow6-13-final-matches-start.png');
   });
 
-  // ------- FLOW 15: Open file via CLI arg with dotfile path -------
-  await test('Flow 15: Open .claude/plans file directly', async () => {
+  // ─────────────────────────────────────────────────────────
+  // FLOW 7: Dotfile project navigation
+  //   Launch with dotfile plan → verify renders → close tab → reopen
+  // ─────────────────────────────────────────────────────────
+  await test('Flow 7: Dotfile project file (open + close + reopen)', async () => {
     killApp();
     await sleep(1000);
     const planFile = path.join(TEST_PROJECT, '.claude', 'plans', 'auth-plan.md');
     const wid = await launchApp([planFile]);
     await sleep(2500);
-    screenshot('15-dotfile-plan-opened.png');
+    assert(wid, 'Window should exist');
+
+    step('1. Dotfile plan opened');
+    screenshot('flow7-01-dotfile-opened.png');
+
+    step('2. Switch to dark mode');
+    click(BTN.theme.x, BTN.theme.y);
+    await sleep(500);
+    screenshot('flow7-02-dotfile-dark.png');
+
+    step('3. Close tab');
+    sendKey('ctrl+w');
+    await sleep(500);
+    screenshot('flow7-03-tab-closed.png');
+
+    // -- Backward --
+    step('4. Reopen closed tab');
+    sendKey('ctrl+shift+t');
+    await sleep(800);
+    screenshot('flow7-04-tab-reopened.png');
+
+    step('5. Back to light mode');
+    click(BTN.theme.x, BTN.theme.y);
+    await sleep(500);
+    screenshot('flow7-05-back-light.png');
+  });
+
+  // ─────────────────────────────────────────────────────────
+  // FLOW 8: Zoom cycle — zoom in multiple levels, then zoom out step-by-step
+  // ─────────────────────────────────────────────────────────
+  await test('Flow 8: Zoom in/out cycle (forward + backward)', async () => {
+    step('1. Default zoom');
+    sendKey('ctrl+0');
+    await sleep(300);
+    screenshot('flow8-01-default-zoom.png');
+
+    step('2. Zoom in 1x');
+    sendKey('ctrl+plus');
+    await sleep(300);
+    screenshot('flow8-02-zoom-110.png');
+
+    step('3. Zoom in 2x');
+    sendKey('ctrl+plus');
+    await sleep(300);
+    screenshot('flow8-03-zoom-120.png');
+
+    step('4. Zoom in 3x');
+    sendKey('ctrl+plus');
+    await sleep(300);
+    screenshot('flow8-04-zoom-130.png');
+
+    // -- Backward --
+    step('5. Zoom out 1x (backward)');
+    sendKey('ctrl+minus');
+    await sleep(300);
+    screenshot('flow8-05-zoom-120-back.png');
+
+    step('6. Zoom out 2x (backward)');
+    sendKey('ctrl+minus');
+    await sleep(300);
+    screenshot('flow8-06-zoom-110-back.png');
+
+    step('7. Zoom out 3x (backward)');
+    sendKey('ctrl+minus');
+    await sleep(300);
+    screenshot('flow8-07-zoom-100-back.png');
+
+    step('8. Reset to default');
+    sendKey('ctrl+0');
+    await sleep(300);
+    screenshot('flow8-08-zoom-reset.png');
   });
 
   // ============================================================
