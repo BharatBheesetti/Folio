@@ -220,6 +220,7 @@
       }
       document.title = (tab.name || 'New Tab') + ' \u2014 Folio';
       renderTabs();
+      highlightActiveFile();
       saveSession();
     }
 
@@ -346,6 +347,8 @@
         switchTab(S.tabs[next].id);
       } else if (e.ctrlKey && e.key === 'p') {
         e.preventDefault(); api.exportPDF();
+      } else if (e.ctrlKey && e.key === 'b') {
+        e.preventDefault(); toggleSidebar();
       } else if (e.ctrlKey && e.key === 'f') {
         e.preventDefault(); showSearch();
       } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && document.activeElement?.getAttribute('role') === 'tab') {
@@ -454,6 +457,142 @@
       renderTabs();
     });
 
+    /* ---- Sidebar / Folder Tree ---- */
+    const sidebar = document.getElementById('sidebar');
+    const sidebarBtn = document.getElementById('sidebar-btn');
+    const fileTree = document.getElementById('file-tree');
+    const sidebarTitle = document.getElementById('sidebar-title');
+    let currentFolder = localStorage.getItem('folio-folder') || null;
+
+    const CHEVRON_SVG = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 2l4 3-4 3"/></svg>`;
+    const FILE_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`;
+    const FOLDER_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
+
+    function toggleSidebar() {
+      sidebar.classList.toggle('visible');
+      document.body.classList.toggle('sidebar-open', sidebar.classList.contains('visible'));
+      localStorage.setItem('folio-sidebar', sidebar.classList.contains('visible') ? 'open' : 'closed');
+    }
+
+    sidebarBtn?.addEventListener('click', toggleSidebar);
+    document.getElementById('sidebar-close')?.addEventListener('click', () => {
+      sidebar.classList.remove('visible');
+      document.body.classList.remove('sidebar-open');
+      localStorage.setItem('folio-sidebar', 'closed');
+    });
+
+    async function openFolderForSidebar() {
+      const folder = await api.openFolderDialog();
+      if (folder) {
+        currentFolder = folder;
+        localStorage.setItem('folio-folder', folder);
+        await loadFolderTree(folder);
+        if (!sidebar.classList.contains('visible')) toggleSidebar();
+      }
+    }
+
+    document.getElementById('sidebar-open-folder')?.addEventListener('click', openFolderForSidebar);
+    document.getElementById('sidebar-empty-open')?.addEventListener('click', openFolderForSidebar);
+
+    async function loadFolderTree(folderPath) {
+      const tree = await api.scanFolder(folderPath);
+      if (tree.error) {
+        fileTree.innerHTML = `<div class="sidebar-empty"><p>${tree.error}</p></div>`;
+        return;
+      }
+      if (!tree.length) {
+        fileTree.innerHTML = '<div class="sidebar-empty"><p>No markdown files found</p></div>';
+        return;
+      }
+      sidebarTitle.textContent = folderPath.split(/[\\/]/).pop();
+      sidebarTitle.title = folderPath;
+      fileTree.innerHTML = '';
+      renderTree(tree, fileTree, 0);
+      highlightActiveFile();
+    }
+
+    function renderTree(nodes, parent, depth) {
+      for (const node of nodes) {
+        if (node.type === 'folder') {
+          const container = document.createElement('div');
+
+          const item = document.createElement('div');
+          item.className = 'tree-item';
+          item.style.paddingLeft = (12 + depth * 16) + 'px';
+
+          const toggle = document.createElement('span');
+          toggle.className = 'tree-folder-toggle';
+          toggle.innerHTML = CHEVRON_SVG;
+
+          const icon = document.createElement('span');
+          icon.className = 'tree-icon';
+          icon.innerHTML = FOLDER_SVG;
+
+          const name = document.createElement('span');
+          name.className = 'tree-name';
+          name.textContent = node.name;
+
+          item.appendChild(toggle);
+          item.appendChild(icon);
+          item.appendChild(name);
+
+          const children = document.createElement('div');
+          children.className = 'tree-children';
+          renderTree(node.children, children, depth + 1);
+
+          // Auto-expand dot-prefixed folders (the whole point!)
+          const autoExpand = node.name.startsWith('.');
+          if (autoExpand) {
+            toggle.classList.add('open');
+            children.classList.add('open');
+          }
+
+          item.addEventListener('click', () => {
+            toggle.classList.toggle('open');
+            children.classList.toggle('open');
+          });
+
+          container.appendChild(item);
+          container.appendChild(children);
+          parent.appendChild(container);
+        } else {
+          const item = document.createElement('div');
+          item.className = 'tree-item';
+          item.style.paddingLeft = (12 + depth * 16 + 18) + 'px';
+          item.dataset.path = node.path;
+
+          const icon = document.createElement('span');
+          icon.className = 'tree-icon';
+          icon.innerHTML = FILE_SVG;
+
+          const name = document.createElement('span');
+          name.className = 'tree-name';
+          name.textContent = node.name;
+
+          item.appendChild(icon);
+          item.appendChild(name);
+          item.title = node.path;
+
+          item.addEventListener('click', () => openFile(node.path));
+          parent.appendChild(item);
+        }
+      }
+    }
+
+    function highlightActiveFile() {
+      const activeTab = S.tabs.find(t => t.id === S.activeId);
+      fileTree.querySelectorAll('.tree-item').forEach(el => {
+        el.classList.toggle('active', el.dataset.path && activeTab && el.dataset.path === activeTab.path);
+      });
+    }
+
+    // Restore sidebar state on load
+    if (localStorage.getItem('folio-sidebar') === 'open') {
+      sidebar.classList.add('visible');
+      document.body.classList.add('sidebar-open');
+    }
+    if (currentFolder) loadFolderTree(currentFolder);
+
     /* ---- Recent Files ---- */
     function getRecentFiles() { return JSON.parse(localStorage.getItem('folio-recent') || '[]'); }
     function addRecentFile(filePath) {
@@ -477,6 +616,78 @@
       list.querySelectorAll('.recent-item').forEach(a => a.addEventListener('click', () => openFile(a.dataset.path)));
       list.querySelector('.recent-clear')?.addEventListener('click', () => { localStorage.removeItem('folio-recent'); renderWelcome(); });
     }
+
+    /* ---- License / Settings ---- */
+    const settingsOverlay = document.getElementById('settings-overlay');
+    const settingsBtn = document.getElementById('settings-btn');
+    const licenseKeyInput = document.getElementById('license-key-input');
+    const licenseStatusText = document.getElementById('license-status-text');
+    const licenseError = document.getElementById('license-error');
+    const licenseBanner = document.getElementById('license-banner');
+    const licenseBannerText = document.getElementById('license-banner-text');
+    const deactivateBtn = document.getElementById('deactivate-btn');
+
+    function showSettings() { settingsOverlay.classList.add('visible'); refreshLicenseUI(); }
+    function hideSettings() { settingsOverlay.classList.remove('visible'); licenseError.style.display = 'none'; }
+
+    settingsBtn?.addEventListener('click', showSettings);
+    document.getElementById('settings-close-btn')?.addEventListener('click', hideSettings);
+    document.getElementById('license-banner-btn')?.addEventListener('click', showSettings);
+    settingsOverlay?.addEventListener('click', e => { if (e.target === settingsOverlay) hideSettings(); });
+
+    async function refreshLicenseUI() {
+      const status = await api.getLicenseStatus();
+      if (status.status === 'activated') {
+        licenseStatusText.textContent = 'License activated. Thank you!';
+        licenseStatusText.style.color = 'var(--accent)';
+        licenseKeyInput.value = status.key?.slice(0, 8) + '...' || '';
+        licenseKeyInput.disabled = true;
+        document.getElementById('activate-btn').style.display = 'none';
+        deactivateBtn.style.display = '';
+        licenseBanner.classList.remove('visible');
+      } else if (status.status === 'trial') {
+        licenseStatusText.textContent = `Trial: ${status.daysLeft} day${status.daysLeft !== 1 ? 's' : ''} remaining`;
+        licenseStatusText.style.color = 'var(--text-secondary)';
+        licenseKeyInput.disabled = false;
+        licenseKeyInput.value = '';
+        document.getElementById('activate-btn').style.display = '';
+        deactivateBtn.style.display = 'none';
+        if (status.daysLeft <= 7) {
+          licenseBannerText.textContent = `Trial: ${status.daysLeft} day${status.daysLeft !== 1 ? 's' : ''} left`;
+          licenseBanner.classList.add('visible');
+        }
+      } else {
+        licenseStatusText.textContent = 'Trial expired. Please activate a license to continue.';
+        licenseStatusText.style.color = '#DC2626';
+        licenseKeyInput.disabled = false;
+        licenseKeyInput.value = '';
+        document.getElementById('activate-btn').style.display = '';
+        deactivateBtn.style.display = 'none';
+        licenseBannerText.textContent = 'Trial expired — activate to continue using Folio';
+        licenseBanner.classList.add('visible');
+      }
+    }
+
+    document.getElementById('activate-btn')?.addEventListener('click', async () => {
+      const key = licenseKeyInput.value.trim();
+      if (!key) { licenseError.textContent = 'Please enter a license key'; licenseError.style.display = 'block'; return; }
+      licenseError.style.display = 'none';
+      const result = await api.activateLicense(key);
+      if (result.success) {
+        refreshLicenseUI();
+      } else {
+        licenseError.textContent = result.error || 'Activation failed';
+        licenseError.style.display = 'block';
+      }
+    });
+
+    deactivateBtn?.addEventListener('click', async () => {
+      await api.deactivateLicense();
+      refreshLicenseUI();
+    });
+
+    // Check license on startup
+    refreshLicenseUI();
 
     /* ---- Init ---- */
     applyTheme();

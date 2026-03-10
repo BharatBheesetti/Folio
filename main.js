@@ -4,6 +4,20 @@ const fs = require('fs');
 
 const SUPPORTED_EXTENSIONS = ['.md', '.markdown', '.mdown', '.mkd', '.mdx'];
 
+// Auto-updater (only in packaged app)
+if (app.isPackaged) {
+  try {
+    const { autoUpdater } = require('electron-updater');
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+    app.whenReady().then(() => {
+      autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+    });
+  } catch {
+    // electron-updater not available in dev
+  }
+}
+
 function isMarkdownFile(fp) { return SUPPORTED_EXTENSIONS.includes(path.extname(fp).toLowerCase()); }
 function findMarkdownArg(argv) {
   for (const arg of argv) {
@@ -61,6 +75,22 @@ const fileWatchers = new Map(); // path -> { watcher }
 const initialArgv = process.argv.slice(app.isPackaged ? 1 : 2);
 fileToOpen = findMarkdownArg(initialArgv);
 let startupArgError = !fileToOpen ? diagnoseArgError(initialArgv) : null;
+
+// macOS: handle file open events (double-click, Open With, drag to dock icon)
+if (isMac) {
+  app.on('open-file', (event, filePath) => {
+    event.preventDefault();
+    if (!isMarkdownFile(filePath)) return;
+    if (mainWindow) {
+      mainWindow.webContents.send('open-file', filePath);
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    } else {
+      // App not ready yet — store for when window is created
+      fileToOpen = filePath;
+    }
+  });
+}
 
 // Single instance lock
 const gotLock = app.requestSingleInstanceLock();
@@ -193,6 +223,80 @@ if (!gotLock) {
   app.whenReady().then(createWindow);
   app.on('window-all-closed', () => app.quit());
 
+  // --- License ---
+
+  const LICENSE_FILE = path.join(app.getPath('userData'), 'license.json');
+
+  function readLicense() {
+    try {
+      return JSON.parse(fs.readFileSync(LICENSE_FILE, 'utf-8'));
+    } catch {
+      return null;
+    }
+  }
+
+  function writeLicense(data) {
+    fs.mkdirSync(path.dirname(LICENSE_FILE), { recursive: true });
+    fs.writeFileSync(LICENSE_FILE, JSON.stringify(data, null, 2));
+  }
+
+  function getLicenseStatus() {
+    const license = readLicense();
+    if (license && license.activated) {
+      return { status: 'activated', key: license.key };
+    }
+    // Trial logic
+    if (!license) {
+      writeLicense({ trialStart: Date.now(), activated: false });
+      return { status: 'trial', daysLeft: 14 };
+    }
+    const elapsed = Date.now() - (license.trialStart || Date.now());
+    const daysLeft = Math.max(0, 14 - Math.floor(elapsed / (1000 * 60 * 60 * 24)));
+    if (daysLeft <= 0) return { status: 'expired', daysLeft: 0 };
+    return { status: 'trial', daysLeft };
+  }
+
+  ipcMain.handle('get-license-status', () => getLicenseStatus());
+
+  ipcMain.handle('activate-license', async (event, key) => {
+    if (!key || typeof key !== 'string') return { success: false, error: 'Invalid key' };
+    const trimmed = key.trim();
+
+    // Try Lemon Squeezy validation
+    try {
+      const { net } = require('electron');
+      const response = await net.fetch('https://api.lemonsqueezy.com/v1/licenses/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ license_key: trimmed, instance_name: require('os').hostname() }),
+      });
+      const data = await response.json();
+      if (data.valid || data.license_key?.status === 'active') {
+        writeLicense({ activated: true, key: trimmed, activatedAt: Date.now() });
+        return { success: true };
+      }
+      // If API says invalid, still allow offline activation for keys matching a pattern
+      if (data.error) return { success: false, error: data.error };
+      return { success: false, error: 'Invalid license key' };
+    } catch {
+      // Offline: accept keys that match a basic format (fallback)
+      // In production, you'd use cryptographic offline validation
+      if (trimmed.length >= 16) {
+        writeLicense({ activated: true, key: trimmed, activatedAt: Date.now(), offline: true });
+        return { success: true };
+      }
+      return { success: false, error: 'Cannot validate license key. Check your internet connection.' };
+    }
+  });
+
+  ipcMain.handle('deactivate-license', () => {
+    const license = readLicense();
+    if (license) {
+      writeLicense({ trialStart: license.trialStart || Date.now(), activated: false });
+    }
+    return { success: true };
+  });
+
   // --- IPC Handlers ---
 
   ipcMain.handle('open-file-dialog', async () => {
@@ -295,6 +399,70 @@ if (!gotLock) {
   ipcMain.on('stop-find', () => {
     if (mainWindow) mainWindow.webContents.stopFindInPage('clearSelection');
   });
+
+  // --- Folder/Tree sidebar ---
+
+  ipcMain.handle('open-folder-dialog', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory']
+    });
+    if (!result.canceled && result.filePaths.length > 0) {
+      return result.filePaths[0];
+    }
+    return null;
+  });
+
+  ipcMain.handle('scan-folder', async (event, folderPath) => {
+    try {
+      return scanDirectory(folderPath, folderPath, 0);
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  function scanDirectory(dirPath, rootPath, depth) {
+    if (depth > 10) return []; // prevent runaway recursion
+    const IGNORED = new Set(['node_modules', '.git', '.obsidian', '__pycache__', '.venv', 'venv', '.env', 'dist', 'build']);
+    let entries;
+    try {
+      entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    } catch { return []; }
+
+    const result = [];
+    // Sort: folders first (dot-prefixed first among folders), then files
+    const folders = [];
+    const files = [];
+    for (const entry of entries) {
+      if (IGNORED.has(entry.name)) continue;
+      if (entry.isDirectory()) {
+        folders.push(entry);
+      } else if (entry.isFile() && isMarkdownFile(entry.name)) {
+        files.push(entry);
+      }
+    }
+
+    // Sort folders: dot-prefixed first, then alpha
+    folders.sort((a, b) => {
+      const aDot = a.name.startsWith('.');
+      const bDot = b.name.startsWith('.');
+      if (aDot !== bDot) return aDot ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    files.sort((a, b) => a.name.localeCompare(b.name));
+
+    for (const folder of folders) {
+      const fullPath = path.join(dirPath, folder.name);
+      const children = scanDirectory(fullPath, rootPath, depth + 1);
+      // Only include folders that contain markdown files (directly or nested)
+      if (children.length > 0) {
+        result.push({ type: 'folder', name: folder.name, path: fullPath, children });
+      }
+    }
+    for (const file of files) {
+      result.push({ type: 'file', name: file.name, path: path.join(dirPath, file.name) });
+    }
+    return result;
+  }
 
   function watchFile(filePath) {
     if (!SUPPORTED_EXTENSIONS.includes(path.extname(filePath).toLowerCase())) return;
