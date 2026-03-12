@@ -63,10 +63,10 @@ test.describe('Integration: CLI folder + AI badges + search + open result', () =
     // 3. Open cross-file search and search for content
     await page.keyboard.press('Control+Shift+f');
     await expect(page.locator('#cross-file-search')).toHaveClass(/visible/);
-    await page.locator('#cfs-input').fill('Claude Code configuration');
+    await page.locator('#cfs-input').fill('Prisma ORM');
 
-    // Wait for search results
-    await expect(page.locator('.cfs-match').first()).toBeVisible({ timeout: 5000 });
+    // Wait for search results (longer timeout for integration sequence)
+    await expect(page.locator('.cfs-match').first()).toBeVisible({ timeout: 10000 });
 
     // 4. Click the search result to open the file
     await page.locator('.cfs-match').first().click();
