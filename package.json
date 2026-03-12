@@ -1,0 +1,209 @@
+{
+  "name": "folio-reader",
+  "version": "1.0.0",
+  "description": "Desktop reader for AI-generated markdown. Built for Claude Code, Cursor, Windsurf, and Copilot output.",
+  "main": "main.js",
+  "author": {
+    "name": "Bharat Bheesetti",
+    "email": "bharat@bheesetti.com"
+  },
+  "license": "MIT",
+  "files": [
+    "cli.js",
+    "main.js",
+    "preload.js",
+    "renderer.js",
+    "index.html",
+    "fonts/",
+    "build/"
+  ],
+  "bin": {
+    "folio-reader": "./cli.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BharatBheesetti/Folio.git"
+  },
+  "homepage": "https://github.com/BharatBheesetti/Folio",
+  "bugs": {
+    "url": "https://github.com/BharatBheesetti/Folio/issues"
+  },
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win portable",
+    "build:installer": "electron-builder --win nsis",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux",
+    "create-icon": "node scripts/create-icon.js",
+    "test": "npx playwright test",
+    "test:screenshots": "npx playwright test --reporter=list"
+  },
+  "dependencies": {
+    "electron-updater": "^6.0.0",
+    "highlight.js": "^11.0.0",
+    "marked": "^12.0.0",
+    "marked-highlight": "^2.0.0",
+    "sanitize-html": "^2.17.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "electron": "^30.0.0",
+    "electron-builder": "^24.0.0",
+    "pngjs": "^7.0.0"
+  },
+  "build": {
+    "appId": "com.folio.app",
+    "productName": "Folio",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "BharatBheesetti",
+        "repo": "Folio"
+      }
+    ],
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "files": [
+      "**/*",
+      "!scripts",
+      "!.github",
+      "!.plans"
+    ],
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "fileAssociations": [
+        {
+          "ext": "md",
+          "name": "Markdown File",
+          "role": "Viewer"
+        },
+        {
+          "ext": "markdown",
+          "name": "Markdown File",
+          "role": "Viewer"
+        },
+        {
+          "ext": "mdown",
+          "name": "Markdown File",
+          "role": "Viewer"
+        },
+        {
+          "ext": "mkd",
+          "name": "Markdown File",
+          "role": "Viewer"
+        },
+        {
+          "ext": "mdx",
+          "name": "Markdown File",
+          "role": "Viewer"
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerSidebar": null,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Folio"
+    },
+    "mac": {
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "fileAssociations": [
+        {
+          "ext": "md",
+          "name": "Markdown File",
+          "role": "Viewer"
+        },
+        {
+          "ext": "markdown",
+          "name": "Markdown File",
+          "role": "Viewer"
+        },
+        {
+          "ext": "mdown",
+          "name": "Markdown File",
+          "role": "Viewer"
+        },
+        {
+          "ext": "mkd",
+          "name": "Markdown File",
+          "role": "Viewer"
+        },
+        {
+          "ext": "mdx",
+          "name": "Markdown File",
+          "role": "Viewer"
+        }
+      ]
+    },
+    "dmg": {
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Office",
+      "mimeTypes": [
+        "text/markdown",
+        "text/x-markdown"
+      ],
+      "fileAssociations": [
+        {
+          "ext": "md",
+          "name": "Markdown File",
+          "role": "Viewer"
+        },
+        {
+          "ext": "markdown",
+          "name": "Markdown File",
+          "role": "Viewer"
+        },
+        {
+          "ext": "mdown",
+          "name": "Markdown File",
+          "role": "Viewer"
+        },
+        {
+          "ext": "mkd",
+          "name": "Markdown File",
+          "role": "Viewer"
+        },
+        {
+          "ext": "mdx",
+          "name": "Markdown File",
+          "role": "Viewer"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.exe
+*.dmg
+*.AppImage
+*.deb
+*.tgz
+*.snap
+
+# Planning & internal docs
+.plans/
+.planning/
+.council/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test artifacts
+tests/screenshots/
+test-results/
+playwright-report/
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Env & secrets
+.env
+.env.*
+*.pem
+license.json
+
+# Marketing drafts
+gumroad-copy.md
